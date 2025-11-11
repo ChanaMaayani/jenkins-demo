@@ -4,64 +4,63 @@ pipeline {
     environment {
         IMAGE_NAME = "test-image"
         CONTAINER_NAME = "test-container"
-        HOST_PORT = "8081"
-        CONTAINER_PORT = "80" // פורט ה-NGINX בקונטיינר
+        PORT = "8081"
+        NGINX_PORT = "80"
     }
 
     stages {
         stage('Checkout') {
             steps {
-                checkout scm
+                git url: 'https://github.com/ChanaMaayani/jenkins-demo.git', branch: 'main'
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                echo 'Building Docker image...'
+                echo "Building Docker image..."
                 sh "docker build -t ${IMAGE_NAME} ."
             }
         }
 
         stage('Run Docker Container') {
             steps {
-                echo 'Running Docker container...'
+                echo "Running Docker container..."
+                // בדיקה אם קונטיינר קיים
                 sh """
-                # אם הקונטיינר קיים, להפסיק ולהסיר
-                if [ \$(docker ps -a -q -f name=${CONTAINER_NAME}) ]; then
-                    echo 'Container already exists. Removing...'
-                    docker stop ${CONTAINER_NAME}
-                    docker rm ${CONTAINER_NAME}
-                fi
-
-                # להריץ קונטיינר חדש
-                docker run -d --name ${CONTAINER_NAME} -p ${HOST_PORT}:${CONTAINER_PORT} ${IMAGE_NAME}
+                    if [ \$(docker ps -a -q -f name=${CONTAINER_NAME}) ]; then
+                        echo "Container already exists. Removing..."
+                        docker stop ${CONTAINER_NAME} || true
+                        docker rm ${CONTAINER_NAME} || true
+                    fi
+                    docker run -d --name ${CONTAINER_NAME} -p ${PORT}:${NGINX_PORT} ${IMAGE_NAME}
                 """
             }
         }
 
         stage('Check Container Status') {
             steps {
-                echo 'Checking if container is running...'
-                sh """
-                if docker ps | grep -q ${CONTAINER_NAME}; then
-                    echo "Container is running ✅"
-                else
-                    echo "Container is NOT running ❌"
-                    docker logs ${CONTAINER_NAME}  # מדפיס לוגים אם הוא יצא מיד
-                    exit 1
-                fi
-                """
+                echo "Checking if container is running..."
+                script {
+                    def isRunning = sh(script: "docker ps -q -f name=${CONTAINER_NAME}", returnStdout: true).trim()
+                    if (!isRunning) {
+                        echo "Container is NOT running ❌"
+                        sh "docker logs ${CONTAINER_NAME} || true"
+                        error("Container failed to start")
+                    } else {
+                        echo "Container is running ✅"
+                    }
+                }
             }
         }
+    }
 
-        stage('Stop and Remove Container') {
-            steps {
-                echo 'Stopping and removing container...'
-                sh """
-                docker stop ${CONTAINER_NAME}
-                docker rm ${CONTAINER_NAME}
-                """
-            }
+    post {
+        failure {
+            echo "Pipeline failed. Cleaning up..."
+            sh """
+                docker stop ${CONTAINER_NAME} || true
+                docker rm ${CONTAINER_NAME} || true
+            """
         }
     }
 }
