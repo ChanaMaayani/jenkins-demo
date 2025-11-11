@@ -12,15 +12,21 @@ pipeline {
         stage('Run Docker Container') {
             steps {
                 echo 'Running Docker container...'
-                // מריצים את הקונטיינר ברקע עם שמירה על השם
-                sh 'docker run -d --name test-container -p 8081:8081 test-image'
+                // אם קיים קונטיינר כזה, עוצרים ומוחקים אותו
+                sh '''
+                if [ $(docker ps -a -q -f name=test-container) ]; then
+                    echo "Container already exists. Removing..."
+                    docker stop test-container
+                    docker rm test-container
+                fi
+                docker run -d --name test-container -p 8081:8081 test-image
+                '''
             }
         }
 
         stage('Check Container Status') {
             steps {
                 echo 'Checking if container is running...'
-                // במקום curl, נוודא שהקונטיינר ברשימת הקונטיינרים
                 sh '''
                 if docker ps | grep -q test-container; then
                     echo "Container is running ✅"
